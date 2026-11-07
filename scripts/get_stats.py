@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
+"""
+Accurate, zero-overhead hardware telemetry engine for Omarchy.
+Computes real CPU delta ticks and Intel GPU RC6 residency sleep delta
+from state cache, avoiding synthetic blocking sleep intervals.
+"""
 import time, glob, os, json, subprocess
 
+STATE_FILE = "/tmp/.omarchy_sysmon_state.json"
 _cpu_model_cache = None
 _gpu_model_cache = None
 
@@ -14,6 +20,7 @@ def get_cpu_model():
                 if "model name" in line:
                     name = line.split(":", 1)[1].strip()
                     name = name.replace("(R)", "").replace("(TM)", "").replace("CPU ", "").strip()
+                    name = name.split("@")[0].strip()
                     _cpu_model_cache = name
                     return name
     except Exception:
@@ -40,29 +47,101 @@ def get_gpu_model():
     return _gpu_model_cache
 
 def get_stats():
-    # 1. Sample CPU and GPU RC6 at start of 100ms window
-    t1 = time.time()
+    now = time.time()
+
+    # 1. Read current CPU ticks
+    cpu_ticks = [0.0] * 8
     try:
         with open("/proc/stat") as f:
-            c1 = [float(x) for x in f.readline().strip().split()[1:]]
-    except Exception:
-        c1 = [0, 0, 0, 0, 0, 0, 0, 0]
-
-    rc6_path = "/sys/class/drm/card1/power/rc6_residency_ms"
-    if not os.path.exists(rc6_path):
-        rc6_path = "/sys/class/drm/card1/gt/gt0/rc6_residency_ms"
-    if not os.path.exists(rc6_path):
-        for p in glob.glob("/sys/class/drm/card*/power/rc6_residency_ms"):
-            rc6_path = p
-            break
-    r1 = None
-    try:
-        with open(rc6_path) as f:
-            r1 = int(f.read().strip())
+            cpu_ticks = [float(x) for x in f.readline().strip().split()[1:]]
     except Exception:
         pass
 
-    # 2. Non-blocking sensor reads while in sampling interval
+    # 2. Read GPU RC6 residency
+    rc6_path = "/sys/class/drm/card1/gt/gt0/rc6_residency_ms"
+    if not os.path.exists(rc6_path):
+        rc6_path = "/sys/class/drm/card1/power/rc6_residency_ms"
+    if not os.path.exists(rc6_path):
+        for p in glob.glob("/sys/class/drm/card*/gt/gt0/rc6_residency_ms") + glob.glob("/sys/class/drm/card*/power/rc6_residency_ms"):
+            rc6_path = p
+            break
+
+    rc6_ms = None
+    if os.path.exists(rc6_path):
+        try:
+            with open(rc6_path) as f:
+                rc6_ms = int(f.read().strip())
+        except Exception:
+            pass
+
+    # 3. Read previous state to compute real deltas
+    prev_state = None
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE) as f:
+                prev_state = json.load(f)
+        except Exception:
+            pass
+
+    # 4. Handle initial cold-start or stale state
+    dt = (now - prev_state["time"]) if (prev_state and "time" in prev_state) else 0.0
+    if dt < 0.2 or dt > 60.0 or not prev_state:
+        # Perform a brief 60ms baseline sample if no valid previous state
+        time.sleep(0.06)
+        now2 = time.time()
+        try:
+            with open("/proc/stat") as f:
+                cpu_ticks2 = [float(x) for x in f.readline().strip().split()[1:]]
+        except Exception:
+            cpu_ticks2 = cpu_ticks
+
+        rc6_ms2 = None
+        if os.path.exists(rc6_path):
+            try:
+                with open(rc6_path) as f:
+                    rc6_ms2 = int(f.read().strip())
+            except Exception:
+                pass
+
+        prev_ticks = cpu_ticks
+        cpu_ticks = cpu_ticks2
+        prev_rc6 = rc6_ms
+        rc6_ms = rc6_ms2
+        dt = now2 - now
+        now = now2
+    else:
+        prev_ticks = prev_state.get("cpu", cpu_ticks)
+        prev_rc6 = prev_state.get("rc6", rc6_ms)
+
+    # Save new state for next cycle
+    try:
+        new_state = {
+            "time": now,
+            "cpu": cpu_ticks,
+            "rc6": rc6_ms
+        }
+        with open(STATE_FILE, "w") as f:
+            json.dump(new_state, f)
+    except Exception:
+        pass
+
+    # Compute genuine CPU utilization
+    cpu_pct = 0.0
+    if prev_ticks and cpu_ticks:
+        d_idle = (cpu_ticks[3] + cpu_ticks[4]) - (prev_ticks[3] + prev_ticks[4])
+        d_tot = sum(cpu_ticks) - sum(prev_ticks)
+        if d_tot > 0:
+            cpu_pct = max(0.0, min(100.0, round(100.0 * (1.0 - d_idle / d_tot), 1)))
+
+    # Compute genuine GPU utilization via RC6 residency delta
+    gpu_pct = 0.0
+    if rc6_ms is not None and prev_rc6 is not None and dt > 0:
+        d_rc6 = rc6_ms - prev_rc6
+        dt_ms = dt * 1000.0
+        sleep_pct = max(0.0, min(100.0, (d_rc6 / dt_ms) * 100.0))
+        gpu_pct = max(0.0, min(100.0, round(100.0 - sleep_pct, 1)))
+
+    # 5. Core Temperatures
     cpu_temp = 42.0
     cores = []
     for hw in glob.glob("/sys/class/hwmon/hwmon*"):
@@ -86,7 +165,7 @@ def get_stats():
         except Exception:
             pass
 
-    # 3. Fan speed (Dell SMM or generic Linux hwmon fan)
+    # 6. Fan Speed
     fan_rpm = 0
     for hw in glob.glob("/sys/class/hwmon/hwmon*"):
         try:
@@ -119,7 +198,7 @@ def get_stats():
     else:
         fan_status = "Turbo / High"
 
-    # 4. CPU Frequencies (Average active clock)
+    # 7. CPU Frequencies
     freqs = []
     for f in glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq"):
         try:
@@ -129,7 +208,7 @@ def get_stats():
             pass
     cpu_freq = round((sum(freqs) / len(freqs)) / 1000000.0, 2) if freqs else 1.8
 
-    # 5. GPU Frequency & Limits
+    # 8. GPU Frequency & Limits
     gpu_mhz = 300
     gpu_min_mhz = 300
     gpu_max_mhz = 1150
@@ -155,7 +234,7 @@ def get_stats():
         except Exception:
             pass
 
-    # 6. Memory & System Load
+    # 9. Memory & Load
     mem_used, mem_total, mem_pct = 0.0, 0.0, 0
     try:
         mem = {}
@@ -179,49 +258,6 @@ def get_stats():
             load_1m = round(float(f.read().split()[0]), 2)
     except Exception:
         pass
-
-    # 7. Sleep remaining of 110ms sample window
-    elapsed = time.time() - t1
-    if elapsed < 0.11:
-        time.sleep(0.11 - elapsed)
-
-    # 8. End of sample window
-    t2 = time.time()
-    try:
-        with open("/proc/stat") as f:
-            c2 = [float(x) for x in f.readline().strip().split()[1:]]
-    except Exception:
-        c2 = c1
-
-    r2 = None
-    if r1 is not None and os.path.exists(rc6_path):
-        try:
-            with open(rc6_path) as f:
-                r2 = int(f.read().strip())
-        except Exception:
-            pass
-
-    # CPU % delta
-    d_idle = (c2[3] + c2[4]) - (c1[3] + c1[4])
-    d_tot = sum(c2) - sum(c1)
-    cpu_pct = max(0.0, min(100.0, round(100.0 * (1.0 - d_idle / d_tot), 1))) if d_tot > 0 else 0.0
-
-    # Intel GPU % utilization: Combines dynamic RPS hardware frequency scaling with RC6 sleep residency
-    if gpu_mhz > gpu_min_mhz:
-        freq_ratio = (gpu_mhz - gpu_min_mhz) / float(max(1, gpu_max_mhz - gpu_min_mhz))
-        gpu_pct = min(100.0, round(10.0 + freq_ratio * 90.0, 1))
-    else:
-        # At minimum idle clock (300 MHz), check RC6 sleep residency
-        if r1 is not None and r2 is not None:
-            dt_ms = (t2 - t1) * 1000.0
-            d_rc6 = r2 - r1
-            sleep_pct = (d_rc6 / dt_ms) * 100.0 if dt_ms > 0 else 100.0
-            if sleep_pct < 75.0:
-                gpu_pct = round(max(0.0, min(10.0, (75.0 - sleep_pct) / 75.0 * 10.0)), 1)
-            else:
-                gpu_pct = 0.0
-        else:
-            gpu_pct = 0.0
 
     return {
         "cpu_model": get_cpu_model(),

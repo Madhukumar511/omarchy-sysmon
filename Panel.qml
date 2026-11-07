@@ -25,7 +25,7 @@ Panel {
     function prev(): string { root.prevMode(); return "ok" }
   }
 
-  // Accurate Hardware Stats Model (Initialized with 0/empty to prevent stale flash)
+  // Real Hardware Stats Model
   property var stats: ({
     "cpu_model": "Processor",
     "gpu_model": "Graphics",
@@ -35,7 +35,7 @@ Panel {
     "cores": [],
     "gpu_mhz": 300,
     "gpu_max_mhz": 1150,
-    "gpu_pct": 0,
+    "gpu_pct": 0.0,
     "fan_rpm": 0,
     "fan_max": 7000,
     "fan_pct": 0,
@@ -48,14 +48,20 @@ Panel {
 
   // Mode 0: Overview, 1: Thermals, 2: Clocks, 3: Memory
   property int displayMode: 0
-  property int pendingMode: 0
-  property bool scrollUp: false
+  property bool tempInFahrenheit: false
 
+  readonly property color foreground: bar ? bar.barForeground : Commons.Color.popups.text
+  readonly property color dim: Qt.darker(foreground, 1.55)
+  readonly property color fainter: Qt.darker(foreground, 2.1)
   readonly property color accentColor: Commons.Color.accent
-  readonly property color secondaryColor: Commons.Color.accent
-  readonly property color barTextColor: bar ? bar.barForeground : Commons.Color.bar.text
-  readonly property color surfaceBg: Commons.Color.popups.background
-  readonly property string barFont: bar ? bar.fontFamily : Style.font.family
+  readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+
+  function mix(from, to, t) {
+    var r = from.r + (to.r - from.r) * t
+    var g = from.g + (to.g - from.g) * t
+    var b = from.b + (to.b - from.b) * t
+    return Qt.rgba(r, g, b, 1)
+  }
 
   function nextMode() {
     displayMode = (displayMode + 1) % 4
@@ -65,8 +71,6 @@ Panel {
     displayMode = (displayMode + 3) % 4
   }
 
-  property bool tempInFahrenheit: false
-
   function metricColor(pct) {
     if (pct >= 85) return "#ef4444"
     if (pct >= 65) return "#f59e0b"
@@ -74,9 +78,16 @@ Panel {
   }
 
   function tempColor(temp) {
-    if (temp >= 90) return "#ef4444"
-    if (temp >= 75) return "#f59e0b"
+    if (temp >= 85) return "#ef4444"
+    if (temp >= 70) return "#f59e0b"
     return accentColor
+  }
+
+  function formatTemp(tempC) {
+    if (root.tempInFahrenheit) {
+      return Math.round(tempC * 9 / 5 + 32) + "°F"
+    }
+    return Math.round(tempC) + "°C"
   }
 
   function refresh() {
@@ -102,9 +113,9 @@ Panel {
     }
   }
 
-  // Periodic refresh: 1s when detailed popup is open, 2s on the bar
+  // Periodic refresh: 1.2s when popup is open, 2.5s on the bar
   Timer {
-    interval: root.opened ? 1000 : 2000
+    interval: root.opened ? 1200 : 2500
     running: true
     repeat: true
     triggeredOnStart: true
@@ -113,7 +124,7 @@ Panel {
 
   Component.onCompleted: root.refresh()
 
-  // Open panel indicator aligns with the button label
+  // Open panel indicator aligns with button
   readonly property real openPanelIndicatorWidth: button.labelWidth
 
   implicitWidth: button.implicitWidth
@@ -180,7 +191,7 @@ Panel {
     }
   }
 
-  // Detailed Interactive Hardware Telemetry Popup Card
+  // World-Clock (Elsewhen) Inspired Hardware Telemetry Popup Panel
   KeyboardPanel {
     id: panel
     anchorItem: button
@@ -218,134 +229,93 @@ Panel {
         anchors.top: parent.top
         spacing: Style.space(12)
 
-        // Header Title & Interactive Refresh Trigger
-        RowLayout {
+        // ---- HERO SECTION (Elsewhen Hero Style) ----
+        Column {
           width: parent.width
+          spacing: Style.space(3)
 
+          // Subtitle Specs Caption
+          Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: (root.stats.cpu_model || "Hardware") + " · " + (root.stats.gpu_model || "GPU")
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+            maximumLineCount: 1
+          }
+
+          // Centered Hero Title with Interactive Spinning Icon
           Row {
+            anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(8)
-            Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
 
-            // Futuristic Live Pulsing Dot with Expanding Radar Ripple
+            Text {
+              text: "Hardware"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.weight: Font.DemiBold
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
             Item {
-              width: 14
-              height: 14
+              id: heroIconBox
+              width: Math.round(Style.font.title * 1.3)
+              height: width
               anchors.verticalCenter: parent.verticalCenter
 
-              // Expanding Ripple Ring
-              Rectangle {
+              Text {
+                id: heroGlyph
                 anchors.centerIn: parent
-                width: 8
-                height: 8
-                radius: 4
-                color: "transparent"
-                border.width: 1.5
-                border.color: root.accentColor
-                scale: 1.0
-                opacity: 0.8
-                ParallelAnimation on scale {
+                text: "󰍛"
+                color: root.accentColor
+                font.family: root.fontFamily
+                font.pixelSize: Math.round(parent.width * 0.95)
+                rotation: 0
+                transformOrigin: Item.Center
+
+                RotationAnimation on rotation {
+                  from: 0
+                  to: 360
+                  duration: Style.duration(1000)
                   loops: Animation.Infinite
-                  NumberAnimation { from: 1.0; to: 2.3; duration: Style.duration(1400); easing.type: Easing.OutCubic }
-                }
-                ParallelAnimation on opacity {
-                  loops: Animation.Infinite
-                  NumberAnimation { from: 0.8; to: 0.0; duration: Style.duration(1400); easing.type: Easing.OutCubic }
+                  running: (statsProc.running || heroMouse.containsMouse) && !Style.reduceMotion
                 }
               }
 
-              // Solid Center Dot
-              Rectangle {
-                anchors.centerIn: parent
-                width: 7
-                height: 7
-                radius: 3.5
-                color: root.accentColor
-                SequentialAnimation on opacity {
-                  loops: Animation.Infinite
-                  NumberAnimation { from: 0.5; to: 1.0; duration: Style.duration(700); easing.type: Easing.InOutSine }
-                  NumberAnimation { from: 1.0; to: 0.5; duration: Style.duration(700); easing.type: Easing.InOutSine }
-                }
+              MouseArea {
+                id: heroMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.refresh()
               }
             }
 
             Text {
-              text: "HARDWARE TELEMETRY"
-              textFormat: Text.PlainText
-              renderType: Text.NativeRendering
-              color: root.barTextColor
-              font.family: root.barFont
-              font.bold: true
-              font.pixelSize: Style.font.subtitle
+              text: "Telemetry"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.weight: Font.DemiBold
               anchors.verticalCenter: parent.verticalCenter
-            }
-          }
-
-          Item { Layout.fillWidth: true }
-
-          // Interactive Fan Status Badge / Refresh Trigger
-          BorderSurface {
-            id: fanBadge
-            Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-            implicitHeight: 22
-            implicitWidth: fanBadgeRow.implicitWidth + Style.space(14)
-            radius: 11
-            color: badgeHover.containsMouse ? Util.alpha(root.accentColor, 0.25) : Util.alpha(root.accentColor, 0.12)
-            borderSpec: Border.flat(badgeHover.containsMouse ? root.accentColor : Util.alpha(root.accentColor, 0.40), 1)
-            scale: badgeMouse.pressed ? 0.94 : (badgeHover.containsMouse ? 1.03 : 1.0)
-
-            Behavior on color { ColorAnimation { duration: Style.duration(120) } }
-            Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
-
-            Row {
-              id: fanBadgeRow
-              anchors.centerIn: parent
-              spacing: Style.space(4)
-
-              Text {
-                text: "󰑐"
-                font.family: root.barFont
-                font.pixelSize: Style.font.caption
-                color: root.accentColor
-                anchors.verticalCenter: parent.verticalCenter
-                rotation: statsProc.running ? 360 : 0
-                Behavior on rotation {
-                  NumberAnimation { duration: Style.duration(500); easing.type: Easing.OutCubic }
-                }
-              }
-
-              Text {
-                text: root.stats.fan_status
-                textFormat: Text.PlainText
-                renderType: Text.NativeRendering
-                color: root.accentColor
-                font.family: root.barFont
-                font.bold: true
-                font.pixelSize: Style.font.caption
-                anchors.verticalCenter: parent.verticalCenter
-              }
-            }
-
-            HoverHandler { id: badgeHover }
-            MouseArea {
-              id: badgeMouse
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.refresh()
             }
           }
         }
 
-        PanelSeparator { foreground: root.barTextColor }
+        PanelSeparator { foreground: root.foreground }
 
-        // --- SECTION 1: INTERACTIVE CPU CARD ---
-        BorderSurface {
-          id: cpuCard
+        // ---- HARDWARE ROWS (Styled after Elsewhen CityRow + DaylightStrip) ----
+
+        // 1. CPU ROW
+        Rectangle {
+          id: cpuRow
           width: parent.width
-          implicitHeight: cpuCol.implicitHeight + Style.space(16)
+          implicitHeight: cpuCol.implicitHeight + Style.space(22)
           radius: Style.cornerRadius
-          color: cpuHover.containsMouse ? Util.alpha(root.accentColor, 0.08) : Util.alpha(Commons.Color.background, 0.35)
-          borderSpec: Border.flat(cpuHover.containsMouse ? Util.alpha(root.accentColor, 0.35) : Util.alpha(root.barTextColor, 0.08), 1)
-          scale: cpuMouse.pressed ? 0.99 : (cpuHover.containsMouse ? 1.006 : 1.0)
+          color: root.mix(Commons.Color.popups.background, root.foreground, cpuHover.hovered ? 0.12 : 0.065)
+          scale: cpuMouse.pressed ? 0.985 : (cpuHover.hovered ? 1.008 : 1.0)
 
           Behavior on color { ColorAnimation { duration: Style.duration(140) } }
           Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
@@ -355,82 +325,60 @@ Panel {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: Style.space(8)
-            spacing: Style.space(6)
+            anchors.margins: Style.space(11)
+            spacing: Style.space(8)
 
+            // Top Header: Label + Live Usage
             RowLayout {
               width: parent.width
-              Row {
-                spacing: Style.space(6)
+
+              Column {
                 Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-                Text {
-                  text: ""
-                  color: root.metricColor(root.stats.cpu_pct)
-                  font.family: root.barFont
-                  font.pixelSize: Style.font.body
-                  renderType: Text.NativeRendering
-                  anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(2)
+
+                Row {
+                  spacing: Style.space(6)
+                  Text {
+                    text: ""
+                    color: root.metricColor(root.stats.cpu_pct)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    text: "Processor"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.weight: Font.DemiBold
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
                 }
+
                 Text {
-                  text: "CPU: " + (root.stats.cpu_model || "Processor")
-                  color: root.barTextColor
-                  font.family: root.barFont
-                  font.bold: true
-                  font.pixelSize: Style.font.body
-                  renderType: Text.NativeRendering
-                  elide: Text.ElideRight
-                  width: Style.space(200)
-                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.stats.cpu_freq.toFixed(2) + " GHz · " + root.formatTemp(root.stats.cpu_temp)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
                 }
               }
+
               Item { Layout.fillWidth: true }
+
               Text {
-                text: root.stats.cpu_pct.toFixed(1) + "% (" + root.stats.cpu_freq.toFixed(2) + " GHz)"
+                text: root.stats.cpu_pct.toFixed(1) + "%"
                 color: root.metricColor(root.stats.cpu_pct)
-                font.family: root.barFont
-                font.bold: true
-                font.pixelSize: Style.font.body
-                renderType: Text.NativeRendering
+                font.family: root.fontFamily
+                font.weight: Font.DemiBold
+                font.pixelSize: Style.font.title
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
               }
             }
 
-            // Animated Dynamic Progress Bar with Glowing Tip
-            Item {
-              width: parent.width
-              height: Style.space(6)
-
-              Rectangle {
-                anchors.fill: parent
-                radius: 3
-                color: Util.alpha(root.barTextColor, 0.12)
-              }
-
-              Rectangle {
-                height: parent.height
-                width: Math.max(6, parent.width * (root.stats.cpu_pct / 100.0))
-                radius: 3
-                color: root.metricColor(root.stats.cpu_pct)
-
-                Behavior on width { NumberAnimation { duration: Style.duration(320); easing.type: Easing.OutCubic } }
-                Behavior on color { ColorAnimation { duration: Style.duration(200) } }
-
-                Rectangle {
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(6)
-                  height: Style.space(6)
-                  radius: 3
-                  color: "#ffffff"
-                  opacity: 0.75
-                }
-              }
-            }
-
-            // Interactive Cores & Thermals grid
+            // Per-Core Thermal Chips (Clickable to switch °C / °F)
             Row {
               width: parent.width
-              spacing: Style.space(8)
+              spacing: Style.space(6)
 
               Repeater {
                 model: root.stats.cores.length > 0 ? root.stats.cores : [
@@ -440,37 +388,37 @@ Panel {
                   {"name": "Core 3", "temp": root.stats.cpu_temp}
                 ]
 
-                BorderSurface {
-                  implicitHeight: 24
-                  implicitWidth: (cpuCol.width - Style.space(24)) / 4
-                  radius: 6
-                  color: chipHover.containsMouse ? Util.alpha(root.tempColor(modelData.temp), 0.22) : Util.alpha(Commons.Color.background, 0.40)
-                  borderSpec: Border.flat(chipHover.containsMouse ? root.tempColor(modelData.temp) : Util.alpha(root.barTextColor, 0.15), 1)
-                  scale: chipMouse.pressed ? 0.92 : (chipHover.containsMouse ? 1.04 : 1.0)
+                Rectangle {
+                  id: coreChip
+                  implicitHeight: Style.space(22)
+                  implicitWidth: (cpuCol.width - Style.space(18)) / 4
+                  radius: Style.cornerRadius
+                  color: root.mix(Commons.Color.popups.background, root.foreground, chipHover.hovered ? 0.16 : 0.08)
+                  border.width: 1
+                  border.color: chipHover.hovered ? root.tempColor(modelData.temp) : Util.alpha(root.foreground, 0.12)
+                  scale: chipMouse.pressed ? 0.94 : (chipHover.hovered ? 1.04 : 1.0)
 
                   Behavior on color { ColorAnimation { duration: Style.duration(120) } }
+                  Behavior on border.color { ColorAnimation { duration: Style.duration(120) } }
                   Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
 
                   Row {
                     anchors.centerIn: parent
-                    spacing: 4
+                    spacing: 3
                     Text {
                       text: modelData.name.replace("Core ", "C") + ":"
-                      color: root.barTextColor
-                      opacity: 0.6
-                      font.family: root.barFont
+                      color: root.dim
+                      font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
-                      renderType: Text.NativeRendering
-                      verticalAlignment: Text.AlignVCenter
+                      anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
-                      text: root.tempInFahrenheit ? Math.round(modelData.temp * 9/5 + 32) + "°F" : Math.round(modelData.temp) + "°"
+                      text: root.formatTemp(modelData.temp)
                       color: root.tempColor(modelData.temp)
-                      font.family: root.barFont
-                      font.bold: true
+                      font.family: root.fontFamily
+                      font.weight: Font.DemiBold
                       font.pixelSize: Style.font.caption
-                      renderType: Text.NativeRendering
-                      verticalAlignment: Text.AlignVCenter
+                      anchors.verticalCenter: parent.verticalCenter
                     }
                   }
 
@@ -479,10 +427,51 @@ Panel {
                     id: chipMouse
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                      root.tempInFahrenheit = !root.tempInFahrenheit
-                    }
+                    onClicked: root.tempInFahrenheit = !root.tempInFahrenheit
                   }
+                }
+              }
+            }
+
+            // DaylightStrip Slider Track with Animated Gliding Thumb Dot
+            Item {
+              width: parent.width
+              height: Style.space(12)
+
+              // Track Background
+              Rectangle {
+                id: cpuTrack
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: Math.max(3, Style.space(3))
+                radius: height / 2
+                color: Util.alpha(root.foreground, 0.10)
+
+                // Filled portion
+                Rectangle {
+                  height: parent.height
+                  width: Math.max(height, parent.width * (Math.min(100.0, root.stats.cpu_pct) / 100.0))
+                  radius: height / 2
+                  color: Util.alpha(root.metricColor(root.stats.cpu_pct), 0.40)
+
+                  Behavior on width { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                }
+
+                // Gliding Elsewhen-style Circular Thumb
+                Rectangle {
+                  id: cpuThumb
+                  width: Math.max(8, Style.space(9))
+                  height: width
+                  radius: width / 2
+                  color: root.metricColor(root.stats.cpu_pct)
+                  border.width: 1.5
+                  border.color: cpuHover.hovered ? "#ffffff" : root.metricColor(root.stats.cpu_pct)
+                  anchors.verticalCenter: parent.verticalCenter
+                  x: Math.round(Math.max(0, Math.min(parent.width - width, (parent.width - width) * (Math.min(100.0, root.stats.cpu_pct) / 100.0))))
+
+                  Behavior on x { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                  Behavior on border.color { ColorAnimation { duration: Style.duration(120) } }
                 }
               }
             }
@@ -496,19 +485,19 @@ Panel {
             onClicked: {
               if (root.bar) root.bar.run("omarchy launch or focus tui btop")
               else Quickshell.execDetached(["omarchy-launch-or-focus-tui", "btop"])
+              root.close()
             }
           }
         }
 
-        // --- SECTION 2: INTERACTIVE GPU CARD ---
-        BorderSurface {
-          id: gpuCard
+        // 2. GPU ROW
+        Rectangle {
+          id: gpuRow
           width: parent.width
-          implicitHeight: gpuCol.implicitHeight + Style.space(16)
+          implicitHeight: gpuCol.implicitHeight + Style.space(22)
           radius: Style.cornerRadius
-          color: gpuHover.containsMouse ? Util.alpha(root.accentColor, 0.08) : Util.alpha(Commons.Color.background, 0.35)
-          borderSpec: Border.flat(gpuHover.containsMouse ? Util.alpha(root.accentColor, 0.35) : Util.alpha(root.barTextColor, 0.08), 1)
-          scale: gpuMouse.pressed ? 0.99 : (gpuHover.containsMouse ? 1.006 : 1.0)
+          color: root.mix(Commons.Color.popups.background, root.foreground, gpuHover.hovered ? 0.12 : 0.065)
+          scale: gpuMouse.pressed ? 0.985 : (gpuHover.hovered ? 1.008 : 1.0)
 
           Behavior on color { ColorAnimation { duration: Style.duration(140) } }
           Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
@@ -518,89 +507,90 @@ Panel {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: Style.space(8)
-            spacing: Style.space(6)
+            anchors.margins: Style.space(11)
+            spacing: Style.space(8)
 
             RowLayout {
               width: parent.width
-              Row {
-                spacing: Style.space(6)
+
+              Column {
                 Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-                Text {
-                  text: "󰢮"
-                  color: root.metricColor(root.stats.gpu_pct)
-                  font.family: root.barFont
-                  font.pixelSize: Style.font.body
-                  renderType: Text.NativeRendering
-                  anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(2)
+
+                Row {
+                  spacing: Style.space(6)
+                  Text {
+                    text: "󰢮"
+                    color: root.metricColor(root.stats.gpu_pct)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    text: root.stats.gpu_model || "Graphics"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.weight: Font.DemiBold
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
                 }
+
                 Text {
-                  text: "GPU: " + (root.stats.gpu_model || "Graphics")
-                  color: root.barTextColor
-                  font.family: root.barFont
-                  font.bold: true
-                  font.pixelSize: Style.font.body
-                  renderType: Text.NativeRendering
-                  elide: Text.ElideRight
-                  width: Style.space(200)
-                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.stats.gpu_mhz + " MHz · Max " + root.stats.gpu_max_mhz + " MHz"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
                 }
               }
+
               Item { Layout.fillWidth: true }
+
               Text {
-                text: root.stats.gpu_pct.toFixed(1) + "% (" + root.stats.gpu_mhz + " MHz)"
+                text: root.stats.gpu_pct.toFixed(1) + "%"
                 color: root.metricColor(root.stats.gpu_pct)
-                font.family: root.barFont
-                font.bold: true
-                font.pixelSize: Style.font.body
-                renderType: Text.NativeRendering
+                font.family: root.fontFamily
+                font.weight: Font.DemiBold
+                font.pixelSize: Style.font.title
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
               }
             }
 
-            // Animated GPU Utilization Bar
+            // DaylightStrip Slider Track
             Item {
               width: parent.width
-              height: Style.space(6)
+              height: Style.space(12)
 
               Rectangle {
-                anchors.fill: parent
-                radius: 3
-                color: Util.alpha(root.barTextColor, 0.12)
-              }
-
-              Rectangle {
-                height: parent.height
-                width: Math.max(root.stats.gpu_pct > 0 ? 6 : 0, parent.width * (root.stats.gpu_pct / 100.0))
-                radius: 3
-                color: root.metricColor(root.stats.gpu_pct)
-
-                Behavior on width { NumberAnimation { duration: Style.duration(320); easing.type: Easing.OutCubic } }
-                Behavior on color { ColorAnimation { duration: Style.duration(200) } }
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: Math.max(3, Style.space(3))
+                radius: height / 2
+                color: Util.alpha(root.foreground, 0.10)
 
                 Rectangle {
-                  visible: root.stats.gpu_pct > 0
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(6)
-                  height: Style.space(6)
-                  radius: 3
-                  color: "#ffffff"
-                  opacity: 0.75
-                }
-              }
-            }
+                  height: parent.height
+                  width: Math.max(height, parent.width * (Math.min(100.0, root.stats.gpu_pct) / 100.0))
+                  radius: height / 2
+                  color: Util.alpha(root.metricColor(root.stats.gpu_pct), 0.40)
 
-            // GPU Clock Frequency Subtitle
-            RowLayout {
-              width: parent.width
-              Text {
-                text: "Clock: " + root.stats.gpu_mhz + " MHz  (Min " + (root.stats.gpu_min_mhz || 300) + " · Max " + (root.stats.gpu_max_mhz || 1150) + " MHz)"
-                color: root.barTextColor
-                opacity: 0.60
-                font.family: root.barFont
-                font.pixelSize: Style.font.caption
-                renderType: Text.NativeRendering
+                  Behavior on width { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                }
+
+                Rectangle {
+                  width: Math.max(8, Style.space(9))
+                  height: width
+                  radius: width / 2
+                  color: root.metricColor(root.stats.gpu_pct)
+                  border.width: 1.5
+                  border.color: gpuHover.hovered ? "#ffffff" : root.metricColor(root.stats.gpu_pct)
+                  anchors.verticalCenter: parent.verticalCenter
+                  x: Math.round(Math.max(0, Math.min(parent.width - width, (parent.width - width) * (Math.min(100.0, root.stats.gpu_pct) / 100.0))))
+
+                  Behavior on x { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                  Behavior on border.color { ColorAnimation { duration: Style.duration(120) } }
+                }
               }
             }
           }
@@ -613,19 +603,19 @@ Panel {
             onClicked: {
               if (root.bar) root.bar.run("omarchy launch or focus tui btop")
               else Quickshell.execDetached(["omarchy-launch-or-focus-tui", "btop"])
+              root.close()
             }
           }
         }
 
-        // --- SECTION 3: INTERACTIVE ACTIVE COOLING FAN CARD ---
-        BorderSurface {
-          id: fanCard
+        // 3. COOLING FAN ROW
+        Rectangle {
+          id: fanRow
           width: parent.width
-          implicitHeight: fanCol.implicitHeight + Style.space(16)
+          implicitHeight: fanCol.implicitHeight + Style.space(22)
           radius: Style.cornerRadius
-          color: fanHover.containsMouse ? Util.alpha(root.accentColor, 0.08) : Util.alpha(Commons.Color.background, 0.35)
-          borderSpec: Border.flat(fanHover.containsMouse ? Util.alpha(root.accentColor, 0.35) : Util.alpha(root.barTextColor, 0.08), 1)
-          scale: fanMouse.pressed ? 0.99 : (fanHover.containsMouse ? 1.006 : 1.0)
+          color: root.mix(Commons.Color.popups.background, root.foreground, fanHover.hovered ? 0.12 : 0.065)
+          scale: fanMouse.pressed ? 0.985 : (fanHover.hovered ? 1.008 : 1.0)
 
           Behavior on color { ColorAnimation { duration: Style.duration(140) } }
           Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
@@ -635,87 +625,100 @@ Panel {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: Style.space(8)
-            spacing: Style.space(6)
+            anchors.margins: Style.space(11)
+            spacing: Style.space(8)
 
             RowLayout {
               width: parent.width
-              Row {
-                spacing: Style.space(8)
+
+              Column {
                 Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                spacing: Style.space(2)
 
-                Text {
-                  id: fanIcon
-                  text: "󰈐"
-                  color: root.stats.fan_rpm > 5000 ? "#ef4444" : (root.stats.fan_rpm > 0 ? root.accentColor : root.barTextColor)
-                  opacity: root.stats.fan_rpm > 0 ? 1.0 : 0.65
-                  font.family: root.barFont
-                  font.pixelSize: Style.font.title
-                  renderType: Text.NativeRendering
-                  anchors.verticalCenter: parent.verticalCenter
+                Row {
+                  spacing: Style.space(6)
+                  Text {
+                    text: "󰈐"
+                    color: root.stats.fan_rpm > 0 ? root.accentColor : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                    rotation: 0
+                    transformOrigin: Item.Center
 
-                  RotationAnimation on rotation {
-                    running: root.stats.fan_rpm > 0
-                    loops: Animation.Infinite
-                    from: 0
-                    to: 360
-                    duration: Math.max(250, 2200 - Math.min(1950, root.stats.fan_rpm * 0.35))
+                    // Interactive spinning fan blades when fan is active
+                    RotationAnimation on rotation {
+                      from: 0
+                      to: 360
+                      duration: root.stats.fan_rpm > 3500 ? Style.duration(400) : Style.duration(800)
+                      loops: Animation.Infinite
+                      running: root.stats.fan_rpm > 0 && !Style.reduceMotion
+                    }
+                  }
+                  Text {
+                    text: "Cooling Fan"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.weight: Font.DemiBold
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
                   }
                 }
 
                 Text {
-                  text: "Active Cooling Fan"
-                  color: root.barTextColor
-                  font.family: root.barFont
-                  font.bold: true
-                  font.pixelSize: Style.font.body
-                  renderType: Text.NativeRendering
-                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.stats.fan_status
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
                 }
               }
+
               Item { Layout.fillWidth: true }
+
               Text {
-                text: root.stats.fan_rpm > 0 
-                  ? root.stats.fan_rpm + " RPM (" + root.stats.fan_pct + "%)"
-                  : "Passive Cooling (Off)"
-                color: root.stats.fan_rpm > 5000 ? "#ef4444" : root.accentColor
-                font.family: root.barFont
-                font.bold: true
-                font.pixelSize: Style.font.body
-                renderType: Text.NativeRendering
+                text: root.stats.fan_rpm > 0 ? root.stats.fan_rpm + " RPM" : "Off"
+                color: root.stats.fan_rpm > 0 ? root.accentColor : root.dim
+                font.family: root.fontFamily
+                font.weight: Font.DemiBold
+                font.pixelSize: Style.font.title
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
               }
             }
 
-            // Animated Fan Speed Bar
+            // DaylightStrip Slider Track
             Item {
               width: parent.width
-              height: Style.space(6)
+              height: Style.space(12)
 
               Rectangle {
-                anchors.fill: parent
-                radius: 3
-                color: Util.alpha(root.barTextColor, 0.12)
-              }
-
-              Rectangle {
-                height: parent.height
-                width: Math.max(root.stats.fan_pct > 0 ? 6 : 0, parent.width * (root.stats.fan_pct / 100.0))
-                radius: 3
-                color: root.stats.fan_rpm > 5000 ? "#ef4444" : root.accentColor
-
-                Behavior on width { NumberAnimation { duration: Style.duration(320); easing.type: Easing.OutCubic } }
-                Behavior on color { ColorAnimation { duration: Style.duration(200) } }
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: Math.max(3, Style.space(3))
+                radius: height / 2
+                color: Util.alpha(root.foreground, 0.10)
 
                 Rectangle {
-                  visible: root.stats.fan_pct > 0
-                  anchors.right: parent.right
+                  height: parent.height
+                  width: Math.max(height, parent.width * (Math.min(100.0, root.stats.fan_pct) / 100.0))
+                  radius: height / 2
+                  color: Util.alpha(root.accentColor, 0.40)
+
+                  Behavior on width { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                }
+
+                Rectangle {
+                  width: Math.max(8, Style.space(9))
+                  height: width
+                  radius: width / 2
+                  color: root.stats.fan_rpm > 0 ? root.accentColor : root.dim
+                  border.width: 1.5
+                  border.color: fanHover.hovered ? "#ffffff" : (root.stats.fan_rpm > 0 ? root.accentColor : root.dim)
                   anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(6)
-                  height: Style.space(6)
-                  radius: 3
-                  color: "#ffffff"
-                  opacity: 0.75
+                  x: Math.round(Math.max(0, Math.min(parent.width - width, (parent.width - width) * (Math.min(100.0, root.stats.fan_pct) / 100.0))))
+
+                  Behavior on x { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                  Behavior on border.color { ColorAnimation { duration: Style.duration(120) } }
                 }
               }
             }
@@ -730,15 +733,14 @@ Panel {
           }
         }
 
-        // --- SECTION 4: INTERACTIVE MEMORY & LOAD CARD ---
-        BorderSurface {
-          id: memCard
+        // 4. MEMORY & LOAD ROW
+        Rectangle {
+          id: memRow
           width: parent.width
-          implicitHeight: memCol.implicitHeight + Style.space(16)
+          implicitHeight: memCol.implicitHeight + Style.space(22)
           radius: Style.cornerRadius
-          color: memHover.containsMouse ? Util.alpha(root.accentColor, 0.08) : Util.alpha(Commons.Color.background, 0.35)
-          borderSpec: Border.flat(memHover.containsMouse ? Util.alpha(root.accentColor, 0.35) : Util.alpha(root.barTextColor, 0.08), 1)
-          scale: memMouse.pressed ? 0.99 : (memHover.containsMouse ? 1.006 : 1.0)
+          color: root.mix(Commons.Color.popups.background, root.foreground, memHover.hovered ? 0.12 : 0.065)
+          scale: memMouse.pressed ? 0.985 : (memHover.hovered ? 1.008 : 1.0)
 
           Behavior on color { ColorAnimation { duration: Style.duration(140) } }
           Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
@@ -748,72 +750,89 @@ Panel {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: Style.space(8)
-            spacing: Style.space(6)
+            anchors.margins: Style.space(11)
+            spacing: Style.space(8)
 
             RowLayout {
               width: parent.width
-              Row {
-                spacing: Style.space(6)
+
+              Column {
                 Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-                Text {
-                  text: ""
-                  color: root.metricColor(root.stats.mem_pct)
-                  font.family: root.barFont
-                  font.pixelSize: Style.font.body
-                  renderType: Text.NativeRendering
-                  anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(2)
+
+                Row {
+                  spacing: Style.space(6)
+                  Text {
+                    text: ""
+                    color: root.metricColor(root.stats.mem_pct)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    text: "Memory & Load"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.weight: Font.DemiBold
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
                 }
+
                 Text {
-                  text: "Memory: " + root.stats.mem_used + "G / " + root.stats.mem_total + "G"
-                  color: root.barTextColor
-                  font.family: root.barFont
-                  font.bold: true
-                  font.pixelSize: Style.font.body
-                  renderType: Text.NativeRendering
-                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.stats.mem_used + "G / " + root.stats.mem_total + " GB · 1m Load " + root.stats.load_1m.toFixed(2)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
                 }
               }
+
               Item { Layout.fillWidth: true }
+
               Text {
-                text: root.stats.mem_pct + "% · Load " + root.stats.load_1m.toFixed(2)
+                text: root.stats.mem_pct + "%"
                 color: root.metricColor(root.stats.mem_pct)
-                font.family: root.barFont
-                font.bold: true
-                font.pixelSize: Style.font.body
-                renderType: Text.NativeRendering
+                font.family: root.fontFamily
+                font.weight: Font.DemiBold
+                font.pixelSize: Style.font.title
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
               }
             }
 
-            // Animated RAM Progress Bar
+            // DaylightStrip Slider Track
             Item {
               width: parent.width
-              height: Style.space(6)
+              height: Style.space(12)
 
               Rectangle {
-                anchors.fill: parent
-                radius: 3
-                color: Util.alpha(root.barTextColor, 0.12)
-              }
-
-              Rectangle {
-                height: parent.height
-                width: Math.max(6, parent.width * (root.stats.mem_pct / 100.0))
-                radius: 3
-                color: root.metricColor(root.stats.mem_pct)
-
-                Behavior on width { NumberAnimation { duration: Style.duration(320); easing.type: Easing.OutCubic } }
-                Behavior on color { ColorAnimation { duration: Style.duration(200) } }
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: Math.max(3, Style.space(3))
+                radius: height / 2
+                color: Util.alpha(root.foreground, 0.10)
 
                 Rectangle {
-                  anchors.right: parent.right
+                  height: parent.height
+                  width: Math.max(height, parent.width * (Math.min(100.0, root.stats.mem_pct) / 100.0))
+                  radius: height / 2
+                  color: Util.alpha(root.metricColor(root.stats.mem_pct), 0.40)
+
+                  Behavior on width { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                }
+
+                Rectangle {
+                  width: Math.max(8, Style.space(9))
+                  height: width
+                  radius: width / 2
+                  color: root.metricColor(root.stats.mem_pct)
+                  border.width: 1.5
+                  border.color: memHover.hovered ? "#ffffff" : root.metricColor(root.stats.mem_pct)
                   anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(6)
-                  height: Style.space(6)
-                  radius: 3
-                  color: "#ffffff"
-                  opacity: 0.75
+                  x: Math.round(Math.max(0, Math.min(parent.width - width, (parent.width - width) * (Math.min(100.0, root.stats.mem_pct) / 100.0))))
+
+                  Behavior on x { NumberAnimation { duration: Style.duration(380); easing.type: Easing.OutCubic } }
+                  Behavior on border.color { ColorAnimation { duration: Style.duration(120) } }
                 }
               }
             }
@@ -827,45 +846,81 @@ Panel {
             onClicked: {
               if (root.bar) root.bar.run("omarchy launch or focus tui btop")
               else Quickshell.execDetached(["omarchy-launch-or-focus-tui", "btop"])
+              root.close()
             }
           }
         }
 
-        PanelSeparator { foreground: root.barTextColor }
+        PanelSeparator { foreground: root.foreground }
 
-        // --- SECTION 5: INTERACTIVE FOOTER ACTIONS ---
-        RowLayout {
+        // ---- SECTION 5: INTERACTIVE ACTION BUTTONS ----
+        Column {
           width: parent.width
           spacing: Style.space(8)
 
-          // Switch Bar Metric Mode Quick Button
+          // Primary Launch Button (Styled natively with qs.Ui.Button)
           Button {
-            Layout.fillWidth: true
-            text: {
-              var names = ["Overview", "Thermals", "Clocks", "RAM & Load"]
-              return "󰑐 View: " + names[root.displayMode]
-            }
-            fontSize: Style.font.bodySmall
-            foreground: root.barTextColor
-            fontFamily: root.barFont
+            width: parent.width
+            height: Style.space(34)
             bordered: true
-            onClicked: root.nextMode()
-          }
-
-          // Launch Btop Terminal Dashboard Button
-          Button {
-            Layout.fillWidth: true
-            text: "Launch Btop"
             iconText: "󰄬"
+            text: "Launch Btop Terminal Dashboard"
             fontSize: Style.font.bodySmall
-            foreground: root.barTextColor
-            fontFamily: root.barFont
-            bordered: true
-            active: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
             onClicked: {
               if (root.bar) root.bar.run("omarchy launch or focus tui btop")
               else Quickshell.execDetached(["omarchy-launch-or-focus-tui", "btop"])
               root.close()
+            }
+          }
+
+          // Secondary Quick Controls Row
+          RowLayout {
+            width: parent.width
+            spacing: Style.space(8)
+
+            // Switch Bar Metric Mode
+            Button {
+              Layout.fillWidth: true
+              height: Style.space(30)
+              bordered: true
+              iconText: "󰍹"
+              text: {
+                var names = ["Overview", "Thermals", "Clocks", "RAM & Load"]
+                return "View: " + names[root.displayMode]
+              }
+              fontSize: Style.font.caption
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.nextMode()
+            }
+
+            // Temp Unit Toggle
+            Button {
+              Layout.preferredWidth: Style.space(80)
+              height: Style.space(30)
+              bordered: true
+              iconText: "󰔄"
+              text: root.tempInFahrenheit ? "°F" : "°C"
+              fontSize: Style.font.caption
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.tempInFahrenheit = !root.tempInFahrenheit
+            }
+
+            // Live Telemetry Refresh
+            Button {
+              Layout.preferredWidth: Style.space(90)
+              height: Style.space(30)
+              bordered: true
+              iconText: "󰑐"
+              iconSpinning: statsProc.running
+              text: "Refresh"
+              fontSize: Style.font.caption
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.refresh()
             }
           }
         }
