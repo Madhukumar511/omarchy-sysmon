@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "atomic.sysmon",
+  "name": "Hardware Monitor",
+  "version": "1.1.0",
+  "author": "Madhukumar511",
+  "homepage": "https://github.com/Madhukumar511/omarchy-sysmon",
+  "license": "MIT",
+  "description": "Clean, native Hardware Monitor bar widget & telemetry dashboard for Omarchy Hyprland.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Hardware Monitor",
+    "description": "Live CPU, GPU, Fan RPM, and Thermals with interactive telemetry card.",
+    "category": "System",
+    "allowMultiple": false
+  }
+}
