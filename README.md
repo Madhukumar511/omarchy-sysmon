@@ -10,6 +10,20 @@ Designed to match the aesthetic and fluid animations of Omarchy's **World Clock*
 
 ---
 
+<p align="center">
+  <img src="assets/popup_preview.png" alt="Hardware Telemetry Dashboard" width="410" />
+  <br/>
+  <sub><b>Interactive Hardware Telemetry Dashboard</b> (Elsewhen-inspired design with per-core thermals & gliding thumbs)</sub>
+</p>
+
+<p align="center">
+  <img src="assets/preview.png" alt="Omarchy Status Bar Widget" />
+  <br/>
+  <sub><b>Omarchy Status Bar Widget</b> (Clean native <code>WidgetButton</code> with multi-metric view cycling)</sub>
+</p>
+
+---
+
 ## ⚡ Quick 1-Line Installation (For You and Others)
 
 To install on any Omarchy system, simply run:
