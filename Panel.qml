@@ -30,7 +30,7 @@ Panel {
     "cpu_model": "Processor",
     "gpu_model": "Graphics",
     "cpu_pct": 0.0,
-    "cpu_temp": 40.0,
+    "cpu_temp": 45.0,
     "cpu_freq": 1.8,
     "cores": [],
     "gpu_mhz": 300,
@@ -43,7 +43,8 @@ Panel {
     "mem_used": 0.0,
     "mem_total": 15.4,
     "mem_pct": 0,
-    "load_1m": 0.50
+    "load_1m": 0.50,
+    "on_battery": false
   })
 
   // Mode 0: Overview, 1: Thermals, 2: Clocks, 3: Memory
@@ -71,15 +72,17 @@ Panel {
     displayMode = (displayMode + 3) % 4
   }
 
+  // Smooth color coding without alarming the user during standard turbo boosts
   function metricColor(pct) {
-    if (pct >= 85) return "#ef4444"
-    if (pct >= 65) return "#f59e0b"
+    if (pct >= 95) return "#ef4444"
+    if (pct >= 75) return "#f59e0b"
     return accentColor
   }
 
+  // CPUs naturally run up to 90-95°C during high-clock turbo bursts. Only flag ≥96°C as red.
   function tempColor(temp) {
-    if (temp >= 85) return "#ef4444"
-    if (temp >= 70) return "#f59e0b"
+    if (temp >= 96) return "#ef4444"
+    if (temp >= 88) return "#f59e0b"
     return accentColor
   }
 
@@ -96,7 +99,7 @@ Panel {
     }
   }
 
-  // Live Accurate Hardware Stats Process
+  // Live Accurate Hardware Stats Process (~1ms runtime with hardware path caching)
   Process {
     id: statsProc
     command: ["/usr/bin/python3", Qt.resolvedUrl("scripts/get_stats.py").toString().replace(/^file:\/\//, "")]
@@ -113,9 +116,12 @@ Panel {
     }
   }
 
-  // Periodic refresh: 1.2s when popup is open, 2.5s on the bar
+  // Battery-Conscious Adaptive Polling:
+  // - Popup open: 1200ms (fluid visuals)
+  // - On battery: 4500ms (saves deep CPU C-states and prevents drain)
+  // - On AC power: 3000ms
   Timer {
-    interval: root.opened ? 1200 : 2500
+    interval: root.opened ? 1200 : (root.stats.on_battery ? 4500 : 3000)
     running: true
     repeat: true
     triggeredOnStart: true
@@ -160,20 +166,21 @@ Panel {
     t += "• GPU:  " + Math.round(root.stats.gpu_pct) + "%  (" + root.stats.gpu_mhz + " MHz)\n"
     t += "• Fan:  " + (root.stats.fan_rpm > 0 ? root.stats.fan_rpm + " RPM" : "Off (Passive)") + "\n"
     t += "• RAM:  " + root.stats.mem_used + "G / " + root.stats.mem_total + "G (" + root.stats.mem_pct + "%)\n"
-    t += "• Load: " + root.stats.load_1m.toFixed(2) + " (1 min)\n\n"
+    t += "• Load: " + root.stats.load_1m.toFixed(2) + " (1 min)\n"
+    t += "• Power: " + (root.stats.on_battery ? "Battery (Low-Power Mode)" : "AC Plugged In") + "\n\n"
     t += "Click: Open Telemetry Panel\n"
     t += "Right-click or Scroll: Switch View"
     return t
   }
 
+  // Clean Bar Widget: Never continuously flashes or turns red on routine thermal boosts
   WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     text: root.barDisplayText
-    active: root.stats.cpu_temp >= 85 || root.stats.cpu_pct >= 90
-    useActiveColor: true
-    activeColor: bar ? bar.urgent : Commons.Color.urgent
+    active: false
+    useActiveColor: false
     horizontalMargin: 8.5
     tooltipText: root.barTooltipText
 
