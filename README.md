@@ -4,7 +4,11 @@ A sleek, native **Hardware Monitor & Telemetry Dashboard** plugin for [Omarchy](
 
 Designed from the ground up to follow Omarchy's minimalist aesthetic, typography, and live theme system.
 
-![Hardware Monitor Preview](assets/preview.png)
+![Hardware Monitor Bar Preview](assets/preview.png)
+
+<p align="center">
+  <img src="assets/popup_preview.png" alt="Hardware Telemetry Dashboard" width="460">
+</p>
 
 ---
 

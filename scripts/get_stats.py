@@ -231,6 +231,7 @@ def get_stats():
         "cpu_freq": cpu_freq,
         "cores": cores,
         "gpu_mhz": gpu_mhz,
+        "gpu_min_mhz": gpu_min_mhz,
         "gpu_max_mhz": gpu_max_mhz,
         "gpu_pct": gpu_pct,
         "fan_rpm": fan_rpm,
